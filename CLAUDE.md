@@ -258,6 +258,8 @@ Reqify/
 
 Core tables (see `src/lib/schema.ts` for full definitions):
 
+
+
 - **users** — id, email, passwordHash
 - **teams** — id, name, slug
 - **teamMembers** — teamId, userId, role (pgEnum: owner/editor/viewer)

@@ -62,6 +62,39 @@ const ACTION_LABELS: Record<string, string> = {
   "environment.deleted": "deleted environment",
 };
 
+const METHOD_COLORS: Record<string, string> = {
+  GET: "#4ade80",
+  POST: "#facc15",
+  PUT: "#60a5fa",
+  DELETE: "#f87171",
+  PATCH: "#c084fc",
+};
+
+const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+
+function extractMethod(entry: ActivityEntry): { method: string | null; displayName: string } {
+  // 1. From metadata
+  if (entry.metadata?.method) {
+    const m = String(entry.metadata.method).toUpperCase();
+    if (METHOD_COLORS[m]) {
+      // For executed requests, resourceName is "GET https://..." — strip the method prefix
+      let displayName = entry.resourceName || "";
+      if (entry.action === "request.executed" && displayName.startsWith(m + " ")) {
+        displayName = displayName.slice(m.length + 1);
+      }
+      return { method: m, displayName };
+    }
+  }
+  // 2. From resourceName (e.g. "GET https://..." for request.executed)
+  if (entry.resourceName && entry.action.startsWith("request.")) {
+    const parts = entry.resourceName.split(" ");
+    if (parts.length >= 2 && HTTP_METHODS.includes(parts[0].toUpperCase())) {
+      return { method: parts[0].toUpperCase(), displayName: parts.slice(1).join(" ") };
+    }
+  }
+  return { method: null, displayName: entry.resourceName || "" };
+}
+
 function formatAction(action: string): string {
   return ACTION_LABELS[action] || action;
 }
@@ -185,7 +218,7 @@ export default function ActivityLog({ open, onClose, workspace }: ActivityLogPro
       <div
         ref={panelRef}
         data-testid="activity-log-panel"
-        className="flex h-full w-[420px] flex-col border-l border-border-primary bg-surface-primary shadow-xl animate-in slide-in-from-right duration-200"
+        className="flex h-full w-[420px] flex-col border-l border-border-primary bg-surface-base shadow-xl animate-in slide-in-from-right duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border-primary px-4 py-3">
@@ -205,7 +238,7 @@ export default function ActivityLog({ open, onClose, workspace }: ActivityLogPro
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-surface-primary scrollbar-thumb-border-primary hover:scrollbar-thumb-content-dim" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--scrollbar-thumb) var(--surface-primary)" }}>
+        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-surface-base scrollbar-thumb-border-primary hover:scrollbar-thumb-content-dim" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--scrollbar-thumb) var(--surface-base)" }}>
           {isPersonal ? (
             <div className="flex flex-col items-center justify-center gap-2 px-4 py-16">
               <p className="text-xs text-content-muted">Activity logs are available for team workspaces</p>
@@ -266,11 +299,26 @@ export default function ActivityLog({ open, onClose, workspace }: ActivityLogPro
                             {formatRelativeTime(entry.createdAt)}
                           </span>
                         </div>
-                        {entry.resourceName && (
-                          <p className="mt-0.5 truncate text-xs text-content-muted">
-                            {entry.resourceName}
-                          </p>
-                        )}
+                        {entry.resourceName && (() => {
+                          const { method, displayName } = extractMethod(entry);
+                          return (
+                            <p className="mt-0.5 truncate text-xs text-content-muted">
+                              {method ? (
+                                <>
+                                  <span className="font-bold" style={{ color: METHOD_COLORS[method] || "inherit" }}>
+                                    {method}
+                                  </span>{" "}
+                                </>
+                              ) : null}
+                              {displayName}
+                            </p>
+                          );
+                        })()}
+                        {entry.metadata?.environment ? (
+                          <span className="mt-1 inline-block rounded bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-content-tertiary">
+                            env: {String(entry.metadata.environment)}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   </div>

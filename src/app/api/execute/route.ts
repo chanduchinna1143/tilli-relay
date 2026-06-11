@@ -3,7 +3,7 @@ import { executeCurlArgs } from "@/lib/curl/executor";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
-import { environmentVariables, environments } from "@/lib/schema";
+import { environmentVariables, environments, userActiveEnvironments } from "@/lib/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveVariablesInTokens } from "@/lib/variables/substitutor";
 import { tokenize, sanitizeTokens } from "@/lib/curl/sanitizer";
@@ -61,23 +61,42 @@ export async function POST(req: NextRequest) {
   let tokens = tokenize(curl);
   let warning: string | undefined;
   try {
-    // Find the active environment for the current workspace context
-    const envFilter = teamId
-      ? and(eq(environments.teamId, teamId), eq(environments.isActive, true))
-      : and(eq(environments.userId, session.userId), isNull(environments.teamId), eq(environments.isActive, true));
+    // Find the user's active environment (per-user selection first, fallback to global isActive)
+    let activeEnvId: string | undefined;
 
-    const [activeEnv] = await db
-      .select({ id: environments.id })
-      .from(environments)
-      .where(envFilter)
+    const userActiveFilter = teamId
+      ? and(eq(userActiveEnvironments.userId, session.userId), eq(userActiveEnvironments.teamId, teamId))
+      : and(eq(userActiveEnvironments.userId, session.userId), isNull(userActiveEnvironments.teamId));
+
+    const [userActive] = await db
+      .select({ environmentId: userActiveEnvironments.environmentId })
+      .from(userActiveEnvironments)
+      .where(userActiveFilter)
       .limit(1);
 
-    // Load variables: from active environment if exists, otherwise all user vars (backwards compat)
-    const userVars = activeEnv
+    if (userActive) {
+      activeEnvId = userActive.environmentId;
+    } else {
+      // Fallback: check environments.isActive column (backward compat)
+      const envFilter = teamId
+        ? and(eq(environments.teamId, teamId), eq(environments.isActive, true))
+        : and(eq(environments.userId, session.userId), isNull(environments.teamId), eq(environments.isActive, true));
+
+      const [activeEnv] = await db
+        .select({ id: environments.id })
+        .from(environments)
+        .where(envFilter)
+        .limit(1);
+
+      activeEnvId = activeEnv?.id;
+    }
+
+    // Load variables from the resolved active environment
+    const userVars = activeEnvId
       ? await db
           .select({ key: environmentVariables.key, value: environmentVariables.value })
           .from(environmentVariables)
-          .where(eq(environmentVariables.environmentId, activeEnv.id))
+          .where(eq(environmentVariables.environmentId, activeEnvId))
       : await db
           .select({ key: environmentVariables.key, value: environmentVariables.value })
           .from(environmentVariables)
@@ -129,7 +148,7 @@ export async function POST(req: NextRequest) {
       "request",
       "",
       `${method} ${url}`,
-      { status: result.status, timeMs: result.timeMs }
+      { method, status: result.status, timeMs: result.timeMs }
     );
   }
 

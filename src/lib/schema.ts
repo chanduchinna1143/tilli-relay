@@ -113,6 +113,18 @@ export const environmentVariables = pgTable("environment_variables", {
   uniqueIndex("env_var_env_key_unique").on(t.environmentId, t.key),
 ]);
 
+// ─── Per-user active environment selection ───────────────────────────────────
+
+export const userActiveEnvironments = pgTable("user_active_environments", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  teamId: text("team_id").references(() => teams.id, { onDelete: "cascade" }),
+  environmentId: text("environment_id").notNull().references(() => environments.id, { onDelete: "cascade" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("user_active_env_team_unique").on(t.userId, t.teamId),
+]);
+
 // ─── History (personal only, no teamId) ──────────────────────────────────────
 
 export const historyEntries = pgTable("history_entries", {

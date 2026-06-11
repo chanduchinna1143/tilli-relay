@@ -5,6 +5,7 @@ import { eq, and, desc, isNull, notInArray } from "drizzle-orm";
 import { withTeamAuth } from "@/lib/withAuth";
 import { handleAppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activityLog";
+import { parseCurl } from "@/lib/curl/parser";
 import { parseJsonBody } from "@/lib/request";
 
 export const GET = withTeamAuth("viewer", async (req, { session, teamId }) => {
@@ -61,7 +62,9 @@ export const POST = withTeamAuth("editor", async (req, { session, teamId }) => {
       .returning();
 
     if (teamId) {
-      logActivity(teamId, session.userId, "request.created", "request", created.id, created.name);
+      let method = "GET";
+      try { method = parseCurl(created.curl).method; } catch {}
+      logActivity(teamId, session.userId, "request.created", "request", created.id, created.name, { method });
     }
 
     return NextResponse.json(created, { status: 201 });

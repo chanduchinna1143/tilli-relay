@@ -6,6 +6,7 @@ import { withTeamAuth } from "@/lib/withAuth";
 import { handleAppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activityLog";
 import { parseJsonBody } from "@/lib/request";
+import { parseCurl } from "@/lib/curl/parser";
 
 async function findRequest(id: string, userId: string, teamId: string | null) {
   if (teamId) {
@@ -69,7 +70,9 @@ export const PUT = withTeamAuth("editor", async (req, { session, teamId }, route
       .returning();
 
     if (teamId) {
-      logActivity(teamId, session.userId, "request.updated", "request", id, updated.name);
+      let method = "GET";
+      try { method = parseCurl(updated.curl).method; } catch {}
+      logActivity(teamId, session.userId, "request.updated", "request", id, updated.name, { method });
     }
 
     return NextResponse.json(updated);
@@ -91,7 +94,9 @@ export const DELETE = withTeamAuth("editor", async (req, { session, teamId }, ro
     await db.delete(requests).where(eq(requests.id, id));
 
     if (teamId) {
-      logActivity(teamId, session.userId, "request.deleted", "request", id, existing.name);
+      let method = "GET";
+      try { method = parseCurl(existing.curl).method; } catch {}
+      logActivity(teamId, session.userId, "request.deleted", "request", id, existing.name, { method });
     }
 
     return NextResponse.json({ deleted: true });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { environments } from "@/lib/schema";
+import { environments, userActiveEnvironments } from "@/lib/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { withTeamAuth } from "@/lib/withAuth";
 import { handleAppError } from "@/lib/errors";
@@ -18,23 +18,35 @@ export const PUT = withTeamAuth("editor", async (req, { session, teamId }, route
   }
 
   try {
-    // If setting this environment as active, deactivate all others first
+    // If setting this environment as active
     if (body.isActive === true) {
-      const deactFilter = teamId
-        ? eq(environments.teamId, teamId)
-        : and(eq(environments.userId, session.userId), isNull(environments.teamId));
-
-      await db
-        .update(environments)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(deactFilter);
+      if (teamId) {
+        // Team context: per-user selection via user_active_environments
+        await db.transaction(async (tx) => {
+          await tx.delete(userActiveEnvironments).where(
+            and(eq(userActiveEnvironments.userId, session.userId), eq(userActiveEnvironments.teamId, teamId))
+          );
+          await tx.insert(userActiveEnvironments).values({
+            userId: session.userId,
+            teamId,
+            environmentId: id,
+          });
+        });
+      } else {
+        // Personal context: keep existing global behavior
+        await db
+          .update(environments)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(and(eq(environments.userId, session.userId), isNull(environments.teamId)));
+      }
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (typeof body.name === "string" && body.name.trim()) {
       updates.name = body.name.trim();
     }
-    if (typeof body.isActive === "boolean") {
+    if (typeof body.isActive === "boolean" && !teamId) {
+      // Only write isActive to the environments table for personal workspaces
       updates.isActive = body.isActive;
     }
 

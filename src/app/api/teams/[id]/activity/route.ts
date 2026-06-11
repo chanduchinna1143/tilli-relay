@@ -44,7 +44,13 @@ export const GET = withAuth(async (req, { session }, routeCtx) => {
       .from(activityLogs)
       .where(eq(activityLogs.teamId, id));
 
-    return NextResponse.json({ entries, total });
+    // Parse metadata JSON strings into objects for the frontend
+    const parsed = entries.map((e) => ({
+      ...e,
+      metadata: e.metadata ? JSON.parse(e.metadata) : null,
+    }));
+
+    return NextResponse.json({ entries: parsed, total });
   } catch (err) {
     console.error("[GET /api/teams/:id/activity]", err);
     return NextResponse.json({ error: "Failed to fetch activity" }, { status: 500 });
